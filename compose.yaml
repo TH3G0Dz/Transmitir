@@ -1,0 +1,68 @@
+services:
+  webshare:
+    build: .
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set PUBLIC_ORIGIN to the public HTTPS URL}
+      TRUST_PROXY_HOPS: "1"
+      ROOM_TTL_SECONDS: ${ROOM_TTL_SECONDS:-21600}
+      MAX_VIEWERS: ${MAX_VIEWERS:-4}
+      MAX_CONNECTIONS_PER_IP: ${MAX_CONNECTIONS_PER_IP:-20}
+      MAX_MESSAGE_BYTES: ${MAX_MESSAGE_BYTES:-65536}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+      RATE_LIMIT_MESSAGES: ${RATE_LIMIT_MESSAGES:-120}
+      STUN_URLS: ${STUN_URLS:?Set STUN_URLS to the public TURN hostname}
+      TURN_URLS: ${TURN_URLS:?Set TURN_URLS to the public TURN hostname}
+      TURN_SHARED_SECRET: ${TURN_SHARED_SECRET:?Set a long random TURN shared secret}
+      TURN_CREDENTIAL_TTL_SECONDS: ${TURN_CREDENTIAL_TTL_SECONDS:-3600}
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN to the DNS name for this server}
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      webshare:
+        condition: service_healthy
+
+  coturn:
+    image: coturn/coturn:latest
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - -n
+      - --log-file=stdout
+      - --no-cli
+      - --fingerprint
+      - --use-auth-secret
+      - --static-auth-secret=${TURN_SHARED_SECRET:?Set a long random TURN shared secret}
+      - --realm=${DOMAIN:?Set DOMAIN to the DNS name for this server}
+      - --listening-port=3478
+      - --min-port=49160
+      - --max-port=49200
+      - --external-ip=${SERVER_PUBLIC_IP:?Set SERVER_PUBLIC_IP to the server's public IPv4}
+      - --no-tls
+      - --no-dtls
+
+volumes:
+  caddy_data:
+  caddy_config:

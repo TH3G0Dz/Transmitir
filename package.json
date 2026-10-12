@@ -1,0 +1,17 @@
+{
+  "name": "webshare",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Compartilhamento de tela P2P via WebRTC com sinalização própria.",
+  "type": "module",
+  "engines": { "node": ">=20.6" },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server/index.js",
+    "dev": "node --watch --env-file-if-exists=.env server/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "ws": "^8.18.3"
+  }
+}

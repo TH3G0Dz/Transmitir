@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1020"><title>Transmitir sua tela</title>
+  <link rel="stylesheet" href="/css/styles.css"><script type="module" src="/js/host.js"></script>
+</head>
+<body>
+  <header class="topbar shell"><a class="brand" href="/"><span class="brand-mark">T</span> Transmitir</a><span class="top-note">PAINEL DO TRANSMISSOR</span></header>
+  <main class="shell workspace">
+    <div class="page-heading"><div><p class="eyebrow">SUA SALA</p><h1>Compartilhe sua tela</h1><p class="muted">Escolha uma qualidade e inicie. O navegador pedirá autorização para capturar a tela.</p></div><span id="liveBadge" class="badge"><i></i> Pronto</span></div>
+    <div class="host-grid">
+      <section class="panel preview-panel">
+        <div class="panel-head"><div><h2>Prévia</h2><p id="connectionState" class="muted small">A transmissão ainda não começou</p></div><span id="viewerCount" class="count-pill">0 espectadores</span></div>
+        <div class="video-frame host-frame"><video id="preview" autoplay muted playsinline></video><div id="previewEmpty" class="empty-state"><div class="screen-icon">▣</div><p>Sua tela aparecerá aqui</p></div></div>
+        <div class="stats-row"><div><span>Resolução / FPS</span><strong id="resolutionStat">—</strong></div><div><span>Envio total</span><strong id="bitrateStat">—</strong></div><div><span>RTT</span><strong id="rttStat">—</strong></div><div><span>Codec</span><strong id="codecStat">—</strong></div></div>
+      </section>
+      <aside class="panel control-panel">
+        <div><p class="eyebrow">CONTROLES</p><h2>Configuração</h2></div>
+        <label class="field-label" for="quality">Qualidade desejada</label>
+        <select id="quality" class="select-control">
+          <option value="720p60">720p · 60 FPS · até ~6 Mbps</option>
+          <option value="1080p30" selected>1080p · 30 FPS · até ~8 Mbps</option>
+          <option value="1080p60">1080p · 60 FPS · até ~12 Mbps</option>
+          <option value="1440p60">1440p · 60 FPS · até ~20 Mbps</option>
+        </select>
+        <small id="qualityHelp" class="muted small">O app prioriza manter a resolução e não reduz manualmente o bitrate. Cada espectador usa upload adicional; o resultado também depende da sua conexão.</small>
+        <label class="field-label" for="contentMode">Otimização da imagem</label>
+        <select id="contentMode" class="select-control" aria-describedby="contentModeHelp">
+          <option value="motion" selected>Vídeo ou jogo (movimento)</option>
+          <option value="detail">Texto ou apresentação (detalhes)</option>
+        </select>
+        <small id="contentModeHelp" class="muted small">O navegador prioriza o tipo de imagem escolhido; a resolução não muda.</small>
+        <label class="check-row"><input id="audioToggle" type="checkbox" checked><span><strong>Solicitar áudio compartilhado</strong><small>Vale ao iniciar ou mudar a tela. Para incluir áudio, escolha uma guia e marque “Compartilhar áudio” no navegador.</small></span></label>
+        <button id="startButton" class="button primary full">Iniciar transmissão</button>
+        <button id="changeSourceButton" class="button secondary full hidden">Mudar tela ou guia</button>
+        <button id="stopButton" class="button danger full" disabled>Encerrar transmissão</button>
+        <div id="sharePanel" class="share-panel hidden"><label class="field-label" for="shareLink">Link para espectadores</label><div class="copy-row"><input id="shareLink" readonly aria-label="Link da sala"><button id="copyButton" class="button secondary">Copiar</button></div><p id="copyStatus" class="small muted" aria-live="polite">Qualquer pessoa com o link pode entrar enquanto a sala estiver ativa.</p></div>
+        <p id="hostMessage" class="notice" role="status" aria-live="polite">Pronto para iniciar. Sua tela não será capturada sem autorização.</p>
+      </aside>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080b12"><title>Assistir transmissão</title>
+  <link rel="stylesheet" href="/css/styles.css"><script type="module" src="/js/viewer.js"></script>
+</head>
+<body class="viewer-body">
+  <header class="topbar shell"><a class="brand" href="/"><span class="brand-mark">T</span> Transmitir</a><span id="viewerStatus" class="viewer-status"><i></i> Conectando à sala…</span></header>
+  <main class="shell viewer-main">
+    <div class="viewer-video-wrap">
+      <video id="remoteVideo" autoplay muted playsinline webkit-playsinline></video>
+      <div id="viewerOverlay" class="viewer-overlay"><div class="spinner"></div><h1 id="overlayTitle">Conectando</h1><p id="overlayText">Aguarde enquanto estabelecemos uma conexão segura.</p><button id="playButton" class="button primary hidden">Tocar vídeo</button><button id="retryButton" class="button secondary hidden">Tentar novamente</button></div>
+      <div class="viewer-controls"><button id="soundButton" class="icon-button" aria-label="Ativar áudio" title="Ativar áudio" disabled>Ativar som</button><button id="fullscreenButton" class="icon-button" aria-label="Tela cheia" title="Tela cheia">Tela cheia</button></div>
+    </div>
+    <p id="audioStatus" class="viewer-footnote audio-status" aria-live="polite">O áudio depende da opção escolhida pelo transmissor.</p>
+    <p class="viewer-footnote">A transmissão é enviada pelo transmissor. A qualidade varia conforme os dispositivos e a rede.</p>
+  </main>
+</body>
+</html>
