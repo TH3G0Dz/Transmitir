@@ -1,155 +1,123 @@
 # Transmitir
 
-Aplicação web de compartilhamento de tela em tempo real. O navegador do transmissor captura a tela após autorização explícita e envia áudio/vídeo por WebRTC ponto a ponto. Node.js/Express serve a interface e o servidor WebSocket coordena as salas e a negociação; a sinalização não transporta o vídeo.
+Aplicação web para compartilhar uma tela, janela ou guia do navegador ao vivo. O transmissor escolhe a fonte no seletor do navegador; outras pessoas assistem pelo link da sala, inclusive em dispositivos e redes diferentes.
 
-## Arquitetura
+## Começar no Windows
 
-- **Páginas web:** `public/` contém a página inicial, painel do transmissor e tela do espectador.
-- **Servidor HTTP:** `server/index.js` publica os arquivos, cria salas, expõe saúde/configuração ICE e emite credenciais TURN temporárias.
-- **Sinalização:** `server/signaling/` valida mensagens e encaminha SDP e candidatos ICE somente entre os participantes da mesma sala.
-- **Salas e tokens:** `server/rooms/` e `server/security/` mantêm salas na memória, validam participantes, aplicam limites e expiram links.
-- **Duração da sala:** enquanto o transmissor permanecer conectado, o servidor envia sinais de manutenção e renova a validade da sala. Não há limite fixo de duração; a sala expira após o período de inatividade configurado em `ROOM_TTL_SECONDS`.
-- **Mídia:** `public/js/webrtc/` trata captura, peer connections, qualidade e métricas. Existe uma `RTCPeerConnection` do transmissor por espectador.
-- **Qualidade de vídeo:** o app mantém o teto de bitrate do perfil escolhido, não o reduz manualmente quando detecta perda ou latência, e pede ao navegador que preserve a resolução antes da taxa de quadros. O controle de congestionamento nativo do navegador continua ativo e ainda pode reduzir a qualidade se a conexão não comportar o envio.
+### Requisitos
 
-O cliente escolhe uma fonte pelo seletor do navegador. Depois, host e espectador trocam offer/answer SDP e candidatos ICE pelo WebSocket. ICE tenta selecionar um caminho direto; STUN ajuda a descobrir endereços de conexão e TURN retransmite a mídia quando necessário. Depois de estabelecida, a mídia segue pela conexão WebRTC, não pelo servidor Express/WebSocket. Se TURN for o caminho escolhido, a mídia passa pelo serviço TURN.
+- Windows 10 ou 11.
+- Node.js 20.6 ou mais recente, que já inclui o npm.
+- Git para baixar o projeto do GitHub.
+- Para publicar um endereço acessível pela internet com o iniciador de um clique: Cloudflare Tunnel (`cloudflared`). O iniciador procura `cloudflared.exe` no `PATH` ou em `C:\Program Files (x86)\cloudflared\cloudflared.exe`.
+- Um navegador atualizado com WebRTC e captura de tela, como Chrome ou Edge.
 
-Os tokens do transmissor e dos espectadores são aleatórios e distintos. O token de espectador está no fragmento (`#token=...`) do link, que não é enviado na requisição HTTP; o navegador o envia apenas na mensagem WebSocket de entrada. A sala é mantida apenas em memória, portanto uma reinicialização do Node encerra todas as salas ativas. A página detecta capacidades de H.264, VP8, VP9 e AV1 reportadas pelo navegador; a negociação SDP escolhe um codec comum sem forçar um formato específico.
+### Instalar o projeto
 
-### Limite de P2P
-
-Cada espectador recebe uma cópia do fluxo. Para o perfil padrão de 1080p30 configurado em até 8 Mbps e quatro espectadores, o transmissor poderá precisar de cerca de 32 Mbps de upload mais a sobrecarga do protocolo. O bitrate configurado é um teto; dispositivo, encoder e rede podem limitar o valor real. Configure `MAX_VIEWERS` com cautela. Para muitos espectadores, planeje migrar para SFU, que recebe um fluxo e distribui cópias a partir de infraestrutura de servidor.
-
-## Requisitos
-
-- Windows 11 para os comandos locais deste guia.
-- Node.js 20.6 ou posterior (recomendado Node.js 22 LTS) e npm.
-- Navegador atualizado com WebRTC e captura de tela. A captura necessita HTTPS em produção; `localhost` é aceito para desenvolvimento.
-- Em produção, um domínio com HTTPS/WSS e um serviço STUN; para redes restritas, TURN público com portas liberadas.
-
-Áudio capturado da aba, janela ou sistema não está disponível de forma uniforme. O navegador apresenta o seletor e pode não fornecer faixa de áudio mesmo quando a aplicação a solicita. A captura sempre depende de escolha e permissão do usuário.
-
-## Instalação e execução no Windows 11
-
-Abra PowerShell na pasta do projeto:
+Abra o PowerShell e execute:
 
 ```powershell
-node --version
-npm --version
+git clone https://github.com/TH3G0Dz/Transmitir.git
+cd Transmitir
 Copy-Item .env.example .env
-npm install
-npm run dev
+npm.cmd install
 ```
 
-Abra <http://localhost:3000>. O endpoint de saúde responde em <http://localhost:3000/api/health> com `{"status":"ok","service":"webshare"}`. O script `npm run dev` reinicia o processo quando os arquivos do servidor mudam. Para execução normal, use `npm start`.
+Use `npm.cmd` no PowerShell. Isso evita o erro de política de execução que pode impedir o carregamento do script `npm.ps1`.
 
-Se a política de execução do PowerShell bloquear scripts do npm, use `npm.cmd install` e `npm.cmd run dev`.
+### Executar apenas no computador transmissor
 
-### Iniciar com um clique (Windows)
+Para desenvolvimento e uso local, execute:
 
-Dê dois cliques em `Iniciar-Transmitir.cmd`. O iniciador abre o servidor e um Cloudflare Quick Tunnel, aguarda o endereço público responder, abre a página do transmissor por HTTPS e salva o endereço em `.runtime/launcher/endereco-publico.txt`. Inicie a transmissão nessa página e compartilhe o link de espectador que o app mostrar. O servidor e o túnel permanecem em segundo plano; para encerrar, dê dois cliques em `Parar-Transmitir.cmd`. O endereço gratuito do Quick Tunnel pode mudar quando o túnel for iniciado novamente. O iniciador não altera a política de execução do Windows e chama `node.exe` diretamente.
+```powershell
+npm.cmd run dev
+```
 
-## Acesso por outro dispositivo na rede local
+Abra <http://localhost:3000>. O endereço `localhost` só funciona no próprio computador; pessoas em outros locais não devem usar esse endereço. Para encerrar o servidor iniciado no terminal, pressione `Ctrl+C`.
 
-1. Descubra o IPv4 do computador transmissor com `ipconfig`.
-2. Em `.env`, configure `HOST=0.0.0.0` e `PUBLIC_ORIGIN=http://IP-DO-COMPUTADOR:3000` (substitua pelo IPv4 real).
-3. Reinicie o servidor e permita a porta TCP 3000 no Firewall do Windows para a rede privada, se solicitado.
-4. No outro dispositivo da mesma rede, abra `http://IP-DO-COMPUTADOR:3000`.
+### Compartilhar com pessoas pela internet
 
-Isso só oferece acesso na rede local. Não publica o serviço na internet. Celulares podem exigir HTTPS para acesso às APIs de mídia; use o fluxo local apenas para desenvolvimento e valide cada navegador/dispositivo.
+1. Abra o arquivo `.env` e deixe estas opções configuradas para o Cloudflare Quick Tunnel local:
 
-## Configuração
+   ```dotenv
+   TRUST_PROXY_HOPS=1
+   ALLOW_QUICK_TUNNEL=true
+   ```
 
-Copie `.env.example` para `.env`. Variáveis principais:
+2. Confirme que instalou o Node.js e o `cloudflared` e que já executou `npm.cmd install`.
+3. Dê dois cliques em `Iniciar-Transmitir.cmd`.
+4. Aguarde o navegador abrir o endereço HTTPS do transmissor.
+5. Clique em **Iniciar transmissão** e selecione uma tela, janela ou guia.
+6. Copie o **link para espectadores** exibido no painel e envie às pessoas.
+7. Para trocar a fonte durante a transmissão, clique em **Mudar tela ou guia**. A sala e o link continuam os mesmos.
+8. Para encerrar, use o botão **Encerrar transmissão** no painel. Para desligar também o servidor e o túnel, execute `Parar-Transmitir.cmd`.
 
-| Variável | Uso |
-|---|---|
-| `NODE_ENV` | Use `production` na implantação. |
-| `HOST`, `PORT` | Endereço de escuta e porta HTTP. |
-| `PUBLIC_ORIGIN` | Origem pública usada para criar links; HTTPS obrigatório em produção. |
-| `ROOM_TTL_SECONDS` | Prazo sem atividade antes de expirar (300 segundos a 7 dias; padrão 6 horas). A sala ativa renova esse prazo automaticamente. |
-| `MAX_VIEWERS` | Máximo de espectadores por sala (padrão 4). |
-| `MAX_ROOMS` | Limite global de salas simultâneas na memória (padrão 500). |
-| `MAX_CONNECTIONS_PER_IP` | Máximo de sockets WebSocket abertos por endereço IP (padrão 20). |
-| `MAX_MESSAGE_BYTES` | Limite de cada mensagem WebSocket. |
-| `STUN_URLS` | Lista separada por vírgula de URLs STUN. |
-| `TURN_URLS` | Lista separada por vírgula de URLs TURN/TURNS. |
-| `TURN_SHARED_SECRET` | Segredo compartilhado com coturn para credenciais temporárias. Nunca use um segredo público ou permanente no frontend. |
-| `TURN_CREDENTIAL_TTL_SECONDS` | Validade das credenciais TURN emitidas pelo backend. |
+O Quick Tunnel cria um endereço público temporário. Se o túnel for recriado, o endereço do transmissor muda e será necessário compartilhar um novo link. O computador transmissor, o navegador, o servidor e o túnel precisam permanecer ligados durante a transmissão.
 
-Os endpoints de criação de sala e de configuração ICE têm limites básicos por endereço IP; a sinalização também limita mensagens por conexão. Em produção, configure limites equivalentes no proxy reverso, especialmente quando várias instâncias ou clientes compartilham o mesmo endereço do proxy.
+## Como a transmissão funciona
 
-Sem TURN configurado, a aplicação ainda tenta STUN, mas algumas redes não conseguirão conectar. Credenciais temporárias seguem o mecanismo REST do coturn: usuário com expiração e senha HMAC-SHA1 calculada com o segredo compartilhado. Restrinja `/api/ice` por TLS e monitore o uso.
+1. O navegador do transmissor pede autorização e captura somente a fonte escolhida pelo usuário.
+2. O servidor cria uma sala temporária e gera um link com credencial de acesso para os espectadores.
+3. O transmissor e cada espectador usam o WebSocket para trocar informações necessárias à conexão. O servidor também envia sinais periódicos para manter a sala ativa.
+4. O áudio e o vídeo são enviados por WebRTC. Normalmente seguem diretamente do transmissor para cada espectador; se a rede exigir TURN, o tráfego de mídia passa pelo serviço TURN configurado.
+5. Cada espectador recebe uma cópia do fluxo. Por isso, mais espectadores exigem mais upload do computador transmissor.
 
-## HTTPS, WSS e publicação
+O túnel público disponibiliza a página e o servidor de sinalização; ele não hospeda nem distribui automaticamente o vídeo. As salas ficam em memória: reiniciar o servidor encerra as salas em andamento. Enquanto o transmissor permanecer conectado, a validade da sala é renovada e não há limite fixo de duração. Depois de ficar inativa pelo período definido em `ROOM_TTL_SECONDS`, a sala expira.
 
-Em produção, coloque Express atrás de um proxy reverso (por exemplo, Caddy ou Nginx) que termine TLS e encaminhe HTTP e WebSocket. Configure `PUBLIC_ORIGIN=https://seu-dominio.example` e `NODE_ENV=production`. O proxy deve encaminhar o upgrade WebSocket para `/signal`, preservar o cabeçalho `Origin` e permitir conexões de longa duração. Use um domínio/certificado válido; não publique credenciais TURN em JavaScript, HTML ou repositório.
+## Qualidade, áudio e fontes
 
-Há agora uma implantação pronta para um VPS Linux com Docker Compose: `Dockerfile`, `compose.yaml` e `Caddyfile`. Ela executa o app, o Caddy para HTTPS/WSS e coturn no IP público do VPS. Consulte o roteiro completo em [docs/DEPLOY-PUBLICO.md](docs/DEPLOY-PUBLICO.md). A configuração de coturn exige IP público fixo e liberação das portas UDP/TCP; um serviço de hospedagem web comum nem sempre permite isso.
-
-O endpoint `/api/ice` devolve apenas URLs STUN se `TURN_SHARED_SECRET` estiver vazio. Para usar coturn, configure `TURN_URLS`, `TURN_SHARED_SECRET` idêntico ao `static-auth-secret` do coturn, TLS/certificados se necessário, e libere a porta de controle e a faixa UDP de relay do servidor. Um serviço TURN gerenciado pode substituir coturn. STUN/TURN não substituem o servidor HTTP/WebSocket nem tornam `localhost` público.
-
-Checklist de implantação:
-
-1. Provisionar domínio, TLS, servidor Node e, se necessário, TURN.
-2. Definir `.env` fora do controle de versão; usar `PUBLIC_ORIGIN` HTTPS e segredos fortes.
-3. Executar `npm ci` com lockfile revisado e `npm start` sob gerenciador de processos.
-4. Configurar proxy para `/` e `/signal`, health check em `/api/health`, limites e timeouts apropriados.
-5. Validar sala entre redes distintas, inclusive com TURN obrigatório, antes de anunciar o serviço.
-
-O servidor guarda salas apenas em memória e não grava mídia. Uma implantação com múltiplas instâncias exigiria armazenamento/pub-sub compartilhado para sinalização e salas. Esta versão é de instância única.
+- O painel oferece perfis de 720p, 1080p e 1440p. Os valores de Mbps são limites máximos solicitados; o navegador, o dispositivo e a conexão determinam o valor real.
+- O app pede ao navegador que preserve a resolução quando a conexão fica limitada. Uma conexão com pouco upload ainda pode reduzir a qualidade.
+- Em P2P, o perfil padrão pode usar até cerca de 8 Mbps de upload por espectador. Quatro espectadores podem exigir aproximadamente 32 Mbps de upload, além da sobrecarga da rede.
+- Para transmitir áudio, habilite **Solicitar áudio compartilhado**, escolha uma guia compatível e marque a opção de áudio que o navegador apresentar. Capturas de tela e áudio variam entre navegador, sistema operacional e dispositivo móvel.
+- **Mudar tela ou guia** substitui a fonte de áudio/vídeo nas conexões atuais. A mudança não cria outra sala nem troca o link.
 
 ## Segurança e privacidade
 
-- A origem do WebSocket deve corresponder exatamente à origem pública; Quick Tunnel só aceita a origem HTTPS encaminhada pelo proxy confiável, sem curinga para outros túneis.
-- O servidor escuta em `127.0.0.1` por padrão. Mantenha assim quando usar Cloudflare Tunnel; só use `0.0.0.0` se realmente precisar expor o serviço à rede local.
-- Criação de salas, configuração ICE e sinalização têm limites de taxa; salas simultâneas, conexões por IP, espectadores e tamanho das mensagens também têm limites.
-- Em produção, o servidor exige `Origin` válido para criação de salas e WebSocket, bloqueia a ausência de `Origin` e envia HSTS quando a conexão chega por HTTPS.
-- Tokens são aleatórios; o servidor guarda hashes de tokens de sala na memória. O link de espectador é uma credencial: compartilhe apenas com pessoas autorizadas.
-- Configure HTTPS/WSS em produção e proteja `.env`, logs, backups e acesso ao host.
-- WebRTC normalmente cifra mídia em trânsito. Isso não impede um espectador de capturar a tela com outro dispositivo ou ferramenta.
-- Não há gravação no serviço. O transmissor precisa iniciar a captura no seletor do navegador e pode encerrá-la a qualquer momento.
-- Esta versão não inclui senha de sala, persistência, autenticação de usuários nem revogação individual de um link de espectador.
+- O navegador só captura a tela depois da escolha e autorização explícitas do transmissor.
+- O link do espectador funciona como credencial: qualquer pessoa que o receber poderá tentar entrar enquanto a sala estiver ativa. Compartilhe-o apenas com quem você deseja convidar.
+- O app não grava a mídia. O servidor mantém salas e credenciais apenas em memória.
+- WebRTC normalmente cifra a mídia durante o transporte. Isso não impede que um espectador grave ou filme a tela por outros meios.
+- Não publique o arquivo `.env` nem compartilhe segredos TURN. O `.gitignore` exclui `.env` do repositório.
 
-## Diagnóstico
+## Configuração
 
-- **`/api/health` não responde:** confira `npm run dev`, porta, firewall e `.env`.
-- **Captura indisponível:** use navegador atualizado e HTTPS ou localhost, e clique para iniciar antes de escolher a fonte.
-- **Espectador vê sala indisponível:** links expiram; o transmissor precisa estar online; confira se o link completo foi copiado.
-- **Sala entra, mas mídia não conecta:** confira ICE no console do navegador. Teste TURN, credenciais temporárias e portas/firewall. STUN sozinho não atravessa todas as redes.
-- **Sem áudio:** verifique a fonte selecionada e as opções do navegador/OS; compartilhar uma tela não garante faixa de áudio.
-- **Qualidade baixa ou travada:** reduza o perfil e o número de espectadores; confira upload, CPU e perda de pacotes. Métricas variam entre navegadores.
-- **WS retorna 403:** confira domínio/origem e se proxy encaminha `Upgrade`/`Connection` para `/signal`.
+Copie `.env.example` para `.env`. Variáveis usadas com mais frequência:
+
+| Variável | Para que serve |
+|---|---|
+| `HOST` e `PORT` | Endereço de escuta e porta do servidor local. O padrão usa `127.0.0.1:3000`. |
+| `PUBLIC_ORIGIN` | Origem pública usada nos links. Em produção deve usar HTTPS. |
+| `ALLOW_QUICK_TUNNEL` | Permite aceitar o domínio Quick Tunnel encaminhado pelo proxy local. Use `true` apenas ao utilizar esse túnel. |
+| `TRUST_PROXY_HOPS` | Quantidade de proxies confiáveis. Para o Quick Tunnel local, use `1`. |
+| `ROOM_TTL_SECONDS` | Prazo de inatividade antes de expirar uma sala. Padrão: seis horas; a sala ativa renova esse prazo. |
+| `MAX_VIEWERS` | Máximo de espectadores por sala. Padrão: quatro. |
+| `MAX_ROOMS` | Máximo de salas simultâneas em memória. |
+| `STUN_URLS` | Servidores STUN usados para procurar um caminho WebRTC direto. |
+| `TURN_URLS` e `TURN_SHARED_SECRET` | Serviço TURN e segredo usado para gerar credenciais temporárias, caso seja necessário retransmitir mídia. |
+
+STUN sozinho não conecta todas as redes. Para redes restritivas, configure TURN. As portas de TURN precisam estar liberadas no servidor e no firewall.
+
+## Publicar em um servidor próprio
+
+Para uma implantação persistente, use um servidor Linux com domínio, HTTPS/WSS e, se necessário, TURN. Este projeto inclui Docker Compose, Caddy e coturn como base. Siga o guia detalhado em [docs/DEPLOY-PUBLICO.md](docs/DEPLOY-PUBLICO.md). Um Quick Tunnel é prático para testar, mas não substitui uma hospedagem permanente.
 
 ## Testes
 
-Automatizados (Node.js, sem dependências extras de teste):
+Com as dependências instaladas, execute:
 
 ```powershell
-npm test
+npm.cmd test
 ```
 
-Os testes cobrem criação, expiração e encerramento de salas, tokens e autorização, limite de espectadores, validação de mensagens, rate limit e roteamento de offer/answer/ICE em sockets simulados. Eles não substituem teste real de WebRTC.
+Os testes automatizados verificam configuração, tokens, salas, expiração e renovação por atividade, limites e mensagens de sinalização. Eles não substituem um teste real entre navegadores e redes diferentes.
 
-### Roteiro manual
+## Diagnóstico rápido
 
-1. Transmissor e espectador em duas abas no mesmo computador.
-2. Dois computadores na mesma rede local.
-3. Computador transmissor e celular espectador na mesma rede.
-4. Dispositivos em redes diferentes (por exemplo, Wi-Fi e rede móvel).
-5. Rede com NAT restritivo/firewall, confirmando falha sem TURN quando aplicável.
-6. Repetir com TURN configurado e verificar par ICE relay nas ferramentas de diagnóstico do navegador.
-7. Trocar entre os quatro perfis com espectadores conectados.
-8. Desconectar/reconectar rede e observar a mensagem de recuperação.
-9. Encerrar pelo botão do transmissor e pela barra do navegador; confirmar liberação do preview no transmissor.
-10. Testar até `MAX_VIEWERS` e confirmar que a entrada seguinte é recusada.
-11. Repetir em Chrome, Edge, Firefox e Safari recentes e em Android/iPhone, observando áudio e tela cheia.
-
-Os passos 2–11 dependem de dispositivos, navegadores, redes ou infraestrutura TURN reais. Resultado pode variar com sistema operacional, permissões, NAT, firewall e capacidade de upload.
-
-## Manutenção
-
-- Atualize dependências com revisão de changelog e `npm audit`; valide versões em ambiente de teste.
-- Faça backup seguro do `.env` fora do repositório e rotacione o segredo TURN se houver exposição.
-- Acompanhe erros do Node, conexões WebSocket, taxa de uso TURN e custos de tráfego sem registrar tokens ou conteúdo de mídia.
-- Antes de aumentar espectadores, faça teste de carga e avalie SFU. O P2P aumenta upload por espectador.
+- **O comando `npm` é bloqueado pelo PowerShell:** use `npm.cmd`, como nos exemplos.
+- **O painel não abre:** confira se o servidor iniciou e se a porta 3000 está livre; consulte `.runtime\launcher\server-error.log` quando usar o iniciador.
+- **O endereço público não funciona:** confirme `TRUST_PROXY_HOPS=1`, `ALLOW_QUICK_TUNNEL=true`, conexão com a internet e se o processo `cloudflared` continua ativo.
+- **A sala fica indisponível:** inicie a transmissão antes de abrir o link e compartilhe o link completo mostrado pelo painel. Reiniciar o servidor encerra a sala antiga.
+- **O espectador entra, mas não vê vídeo:** teste primeiro na mesma rede; confira firewall, NAT e configuração TURN.
+- **Sem áudio:** confirme que o seletor do navegador permitiu compartilhar áudio da guia. A opção não é oferecida por todas as fontes e dispositivos.
+- **Imagem travando ou perdendo qualidade:** confira o upload do transmissor, a quantidade de espectadores, o perfil selecionado e o uso de CPU.
