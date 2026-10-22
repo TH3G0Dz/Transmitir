@@ -25,7 +25,7 @@ test("adiciona espectadores, respeita limite e encerra sala", () => {
   assert.equal(removal.role, "viewer");
   assert.equal(removal.room.viewers.size, 0);
   assert.equal(manager.removeParticipant(room.id, "host-id").role, "host");
-  assert.equal(manager.get(room.id), null);
+  assert.equal(manager.get(room.id).host, null);
 });
 
 test("remove salas expiradas", () => {
@@ -35,5 +35,19 @@ test("remove salas expiradas", () => {
   now += 1001;
   assert.equal(manager.cleanupExpired(), 1);
   assert.equal(manager.get(room.id), null);
+});
+
+test("sala sem transmissor expira após curta reserva e ganha TTL normal ao conectar", () => {
+  let now = 1_000_000;
+  const manager = new RoomManager({ ttlSeconds: 3600, now: () => now });
+  const reserved = manager.createRoom();
+  now += 5 * 60 * 1000 + 1;
+  assert.equal(manager.get(reserved.id), null);
+
+  now = 2_000_000;
+  const active = manager.createRoom();
+  assert.equal(manager.attachHost(active.id, {}, "host-id"), true);
+  now += 5 * 60 * 1000 + 1;
+  assert.ok(manager.get(active.id));
 });
 

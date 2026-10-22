@@ -5,6 +5,7 @@ import express from "express";
 import { WebSocketServer } from "ws";
 import { config } from "./config.js";
 import { RoomManager } from "./rooms/room-manager.js";
+import { validateJoin } from "./rooms/room-validation.js";
 import { createTurnCredentials } from "./security/tokens.js";
 import { SlidingWindowLimiter } from "./security/rate-limit.js";
 import { handleConnection } from "./signaling/message-router.js";
@@ -18,6 +19,7 @@ const httpLimiter = new SlidingWindowLimiter({ windowMs: config.rateLimitWindowM
 const iceLimiter = new SlidingWindowLimiter({ windowMs: config.rateLimitWindowMs, limit: 60 });
 const messageLimiter = new SlidingWindowLimiter({ windowMs: config.rateLimitWindowMs, limit: config.rateLimitMessages });
 const connectionsByIp = new Map();
+let totalConnections = 0;
 
 function parseTunnelOrigin(protocolHeader, hostHeader) {
   if (typeof protocolHeader !== "string" || typeof hostHeader !== "string") return null;
@@ -67,10 +69,17 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: "8kb", strict: true }));
 
-app.get("/api/health", (_req, res) => res.json({ status: "ok", service: "webshare", runtimeVersion: 3 }));
+app.get("/api/health", (_req, res) => res.json({ status: "ok", service: "webshare", runtimeVersion: 5 }));
 app.get("/api/config", (_req, res) => res.json({ maxViewers: config.maxViewers, roomTtlSeconds: config.roomTtlSeconds }));
-app.get("/api/ice", (req, res) => {
+app.post("/api/ice", (req, res) => {
+  if ((config.nodeEnv === "production" || config.allowQuickTunnel) && !isAllowedOrigin(req.get("origin"), req.headers)) {
+    return res.status(403).json({ error: "origin_not_allowed" });
+  }
   if (!iceLimiter.consume(req.ip ?? "unknown")) return res.status(429).json({ error: "rate_limited" });
+  const credentials = { ...(req.body ?? {}), type: "join" };
+  if (!validateJoin(credentials) || !rooms.authorize(credentials.roomId, credentials.role, credentials.token)) {
+    return res.status(403).json({ error: "room_unavailable" });
+  }
   const iceServers = [];
   if (config.stunUrls.length) iceServers.push({ urls: config.stunUrls });
   if (config.turnUrls.length && config.turnSharedSecret) {
@@ -110,18 +119,28 @@ server.on("upgrade", (request, socket, head) => {
   const count = connectionsByIp.get(ip) ?? 0;
   const originAllowed = isAllowedOrigin(origin, request.headers);
   if (pathname !== "/signal" || !originAllowed || count >= config.maxConnectionsPerIp) { socket.write("HTTP/1.1 403 Forbidden\r\n\r\n"); socket.destroy(); return; }
-  wss.handleUpgrade(request, socket, head, (ws) => {
-    connectionsByIp.set(ip, count + 1);
-    ws.once("close", () => {
-      const remaining = (connectionsByIp.get(ip) ?? 1) - 1;
-      if (remaining <= 0) connectionsByIp.delete(ip); else connectionsByIp.set(ip, remaining);
-    });
-    wss.emit("connection", ws, request);
-  });
+  if (totalConnections >= config.maxTotalConnections) { socket.write("HTTP/1.1 503 Service Unavailable\r\n\r\n"); socket.destroy(); return; }
+  connectionsByIp.set(ip, count + 1);
+  totalConnections += 1;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    totalConnections -= 1;
+    const remaining = (connectionsByIp.get(ip) ?? 1) - 1;
+    if (remaining <= 0) connectionsByIp.delete(ip); else connectionsByIp.set(ip, remaining);
+  };
+  socket.once("close", release);
+  try {
+    wss.handleUpgrade(request, socket, head, (ws) => wss.emit("connection", ws, request));
+  } catch {
+    release();
+    socket.destroy();
+  }
 });
 wss.on("connection", (socket) => {
   socket.isAlive = true;
-  handleConnection(socket, { roomManager: rooms, limiter: messageLimiter, config });
+  handleConnection(socket, { roomManager: rooms, limiter: messageLimiter });
 });
 wss.on("error", () => {});
 server.on("error", (error) => {

@@ -10,10 +10,10 @@ const fullscreenButton = $("fullscreenButton");
 const audioStatus = $("audioStatus");
 let signal = null;
 let peer = null;
-let viewerId = null;
 let retrying = false;
 let playbackBlocked = false;
 let pendingCandidates = [];
+let peerGeneration = 0;
 
 function setOverlay(title, text, ended = false, retry = false) {
   $("overlayTitle").textContent = title;
@@ -43,8 +43,8 @@ function credentials() {
   if (!roomId || !token) throw new Error("O link da sala está incompleto.");
   return { roomId, token };
 }
-async function getIceServers() {
-  const response = await fetch("/api/ice", { cache: "no-store" });
+async function getIceServers(roomId, token, role) {
+  const response = await fetch("/api/ice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ roomId, token, role }), cache: "no-store" });
   if (!response.ok) throw new Error("Não foi possível carregar a configuração de rede.");
   return (await response.json()).iceServers;
 }
@@ -56,16 +56,20 @@ async function connect() {
   setOverlay("Conectando", "Aguarde enquanto estabelecemos uma conexão segura."); setStatus("Conectando à sala…");
   try {
     const { roomId, token } = credentials();
-    signal = new SignalingClient();
-    signal.addEventListener("signal", onSignal);
-    signal.addEventListener("disconnected", () => {
-      if (peer?.connectionState !== "connected" && !overlay.classList.contains("ended")) fail("A conexão com a sala foi interrompida. Tente novamente.");
+    const client = new SignalingClient();
+    signal = client;
+    client.addEventListener("signal", onSignal);
+    client.addEventListener("disconnected", () => {
+      if (signal === client && !overlay.classList.contains("ended")) fail("A conexão de sinalização foi interrompida. Toque em tentar novamente para voltar à sala.");
     });
-    const joined = await signal.connect({ roomId, role: "viewer", token });
-    viewerId = joined.viewerId;
+    await client.connect({ roomId, role: "viewer", token });
     setOverlay("Aguardando transmissão", "Você entrou na sala. A conexão de vídeo está sendo negociada.");
   } catch (error) {
-    fail(error.message === "room_unavailable" ? "A transmissão não está disponível. Verifique se o link está correto e se o transmissor iniciou a sala." : error.message, true);
+    const unavailable = error.message === "room_unavailable";
+    const message = unavailable
+      ? "A transmissão não está disponível. Verifique se o link está correto e se o transmissor iniciou a sala."
+      : error.message === "room_full_or_offline" ? "A sala está cheia ou o transmissor não está conectado." : error.message;
+    fail(message, unavailable);
   } finally { retrying = false; $("retryButton").disabled = false; }
 }
 
@@ -78,47 +82,68 @@ async function onSignal(event) {
       else pendingCandidates.push(message.candidate);
     }
     else if (message.type === "room-ended") {
-      cleanup(); setStatus("Transmissão encerrada"); setOverlay("Transmissão encerrada", "O transmissor encerrou a sala.", true);
+      const reason = message.reason === "host_disconnected" ? "O transmissor não conseguiu reconectar à sala." : message.reason === "expired" ? "A sala expirou por inatividade." : "O transmissor encerrou a sala.";
+      cleanup(); setStatus("Transmissão encerrada"); setOverlay("Transmissão encerrada", reason, true);
     } else if (message.type === "error") {
       const text = message.code === "room_full_or_offline" ? "A sala está cheia ou o transmissor não está conectado." : `Não foi possível entrar na sala (${message.code}).`;
-      fail(text, true);
+      fail(text, message.code === "room_unavailable");
     }
   } catch (error) { fail(`Falha ao iniciar o vídeo: ${error.message}`, true); }
 }
 
 async function acceptOffer(message) {
-  peer?.close(); peer = null; video.srcObject = null;
-  peer = createViewerPeerConnection(await getIceServers(), {
-    onTrack: async ({ streams, track }) => {
-    if (streams[0]) video.srcObject = streams[0];
-    track.addEventListener("mute", updateAudioStatus);
-    track.addEventListener("unmute", updateAudioStatus);
-    updateAudioStatus();
-    try { await video.play(); } catch {
-      playbackBlocked = true;
-      setOverlay("Toque para reproduzir", "O navegador precisa de um toque para iniciar o vídeo.", false);
-      playButton.classList.remove("hidden");
-    }
-    },
-    onIceCandidate: (candidate) => { if (signal?.connected) signal.send({ type: "ice", target: message.from, candidate }); },
-    onStateChange: (connectionState) => {
-    if (connectionState === "connected") {
-      updateAudioStatus();
-      if (!playbackBlocked) overlay.classList.add("hidden");
-      setStatus("Ao vivo", true);
-    } else if (connectionState === "failed") fail("A conexão falhou. Tente novamente ou peça ao transmissor para iniciar outra sala.", true);
-    else if (connectionState === "disconnected") { setStatus("Reconectando…"); setOverlay("Reconectando", "A conexão foi interrompida temporariamente."); }
-    }
-  });
-  await peer.setRemoteDescription(message.description);
-  for (const candidate of pendingCandidates.splice(0)) await peer.addIceCandidate(candidate);
-  const answer = await peer.createAnswer();
-  await peer.setLocalDescription(answer);
-  signal.send({ type: "answer", target: message.from, description: peer.localDescription });
+  const generation = ++peerGeneration;
+  const previous = peer;
+  peer = null;
+  video.srcObject = null;
+  previous?.close();
+  const client = signal;
+  try {
+    const { roomId, token } = credentials();
+    const iceServers = await getIceServers(roomId, token, "viewer");
+    if (generation !== peerGeneration || signal !== client || !client?.connected) return;
+    let newPeer;
+    newPeer = createViewerPeerConnection(iceServers, {
+      onTrack: async ({ streams, track }) => {
+        if (peer !== newPeer) return;
+        if (streams[0]) video.srcObject = streams[0];
+        track.addEventListener("mute", updateAudioStatus);
+        track.addEventListener("unmute", updateAudioStatus);
+        updateAudioStatus();
+        try { await video.play(); } catch {
+          playbackBlocked = true;
+          setOverlay("Toque para reproduzir", "O navegador precisa de um toque para iniciar o vídeo.", false);
+          playButton.classList.remove("hidden");
+        }
+      },
+      onIceCandidate: (candidate) => { if (peer === newPeer && signal === client && client.connected) client.send({ type: "ice", target: message.from, candidate }); },
+      onStateChange: (connectionState) => {
+        if (peer !== newPeer) return;
+        if (connectionState === "connected") {
+          updateAudioStatus();
+          if (!playbackBlocked) overlay.classList.add("hidden");
+          setStatus("Ao vivo", true);
+        } else if (connectionState === "failed") fail("A conexão falhou. Tente novamente ou peça ao transmissor para iniciar outra sala.");
+        else if (connectionState === "disconnected") { setStatus("Reconectando…"); setOverlay("Reconectando", "A conexão foi interrompida temporariamente."); }
+        else if (connectionState === "closed") fail("A conexão de vídeo foi encerrada. Tente novamente.");
+      }
+    });
+    peer = newPeer;
+    await newPeer.setRemoteDescription(message.description);
+    if (peer !== newPeer || generation !== peerGeneration || signal !== client) return;
+    for (const candidate of pendingCandidates.splice(0)) await newPeer.addIceCandidate(candidate);
+    const answer = await newPeer.createAnswer();
+    if (peer !== newPeer || generation !== peerGeneration || signal !== client) return;
+    await newPeer.setLocalDescription(answer);
+    if (peer !== newPeer || generation !== peerGeneration || signal !== client || !client.connected) return;
+    client.send({ type: "answer", target: message.from, description: newPeer.localDescription });
+  } catch (error) {
+    if (generation === peerGeneration && signal === client) throw error;
+  }
 }
 
-function cleanupPeer() { peer?.close(); peer = null; pendingCandidates = []; video.srcObject = null; }
-function cleanup() { cleanupPeer(); signal?.close(); signal = null; }
+function cleanupPeer() { const previous = peer; peer = null; pendingCandidates = []; video.srcObject = null; previous?.close(); }
+function cleanup() { peerGeneration += 1; cleanupPeer(); const previous = signal; signal = null; previous?.close(); }
 function fail(message, ended = false) {
   setStatus("Desconectado");
   setOverlay(ended ? "Sala indisponível" : "Conexão interrompida", message, ended, !ended);

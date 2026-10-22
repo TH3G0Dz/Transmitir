@@ -12,7 +12,58 @@ $cloudflaredPath = if ($cloudflaredCommand) { $cloudflaredCommand.Source } else 
 $serverProcess = $null
 $tunnelProcess = $null
 $startedServer = $false
+$startedTunnel = $false
 $completed = $false
+
+function Test-LegacyProcess($processId, $expectedName) {
+  try { $details = Get-CimInstance Win32_Process -Filter "ProcessId = $processId" -ErrorAction Stop } catch { return $false }
+  if (-not $details -or -not $details.CommandLine) { return $false }
+  if ($expectedName -eq 'cloudflared') {
+    return $details.CommandLine -match '(?i)\btunnel\b.*--url\s+"?http://127\.0\.0\.1:3000"?(\s|$)'
+  }
+  if ($expectedName -eq 'node' -and $details.CommandLine -match '(?i)(?:^|\s)server[\\/]index\.js(?:\s|$)') {
+    $listener = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.OwningProcess -eq $processId } | Select-Object -First 1
+    $health = Get-WebShareHealth
+    return [bool]($listener -and $health -and $health.service -eq 'webshare')
+  }
+  return $false
+}
+
+function Get-TrackedProcess($path, $expectedName) {
+  if (-not (Test-Path -LiteralPath $path)) { return $null }
+  $saved = Get-Content -LiteralPath $path -Raw
+  try { $identity = $saved | ConvertFrom-Json -ErrorAction Stop } catch { $identity = $null }
+  $legacy = -not ($identity.Id -and $identity.StartTimeUtcTicks)
+  if ($legacy) {
+    $processId = 0
+    if (-not [int]::TryParse($saved.Trim(), [ref]$processId) -or $processId -le 0) { return $null }
+  } else { $processId = [int]$identity.Id }
+  $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
+  if (-not $process -or $process.ProcessName -ne $expectedName) { return $null }
+  if ($legacy) {
+    if (-not (Test-LegacyProcess $processId $expectedName)) {
+      throw "O PID legado $processId pertence a $expectedName, mas não pôde ser validado. Para evitar deixar um túnel duplicado, encerre esse processo pelo Gerenciador de Tarefas e tente novamente."
+    }
+    Save-TrackedProcess $path $processId
+  } else {
+    try { if ($process.StartTime.ToUniversalTime().Ticks -ne [long]$identity.StartTimeUtcTicks) { return $null } } catch { return $null }
+  }
+  return $process
+}
+
+function Save-TrackedProcess($path, $processId) {
+  $process = Get-Process -Id $processId -ErrorAction Stop
+  @{ Id = $process.Id; StartTimeUtcTicks = $process.StartTime.ToUniversalTime().Ticks } |
+    ConvertTo-Json -Compress | Set-Content -LiteralPath $path -Encoding ascii
+}
+
+function Stop-ProcessSafely($tracked) {
+  if (-not $tracked) { return }
+  try { $startTicks = $tracked.StartTime.ToUniversalTime().Ticks } catch { return }
+  $current = Get-Process -Id $tracked.Id -ErrorAction SilentlyContinue
+  if (-not $current -or $current.ProcessName -ne $tracked.ProcessName) { return }
+  try { if ($current.StartTime.ToUniversalTime().Ticks -eq $startTicks) { Stop-Process -InputObject $current -Force -ErrorAction SilentlyContinue } } catch { }
+}
 
 function Get-WebShareHealth {
   try {
@@ -33,7 +84,7 @@ try {
   New-Item -ItemType Directory -Path $runtime -Force | Out-Null
 
   $health = Get-WebShareHealth
-  if ($health -and $health.runtimeVersion -eq 3) {
+  if ($health -and $health.runtimeVersion -eq 5) {
     Write-Host 'Servidor de transmissão já está ativo.' -ForegroundColor Green
   } else {
     $listener = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -41,7 +92,7 @@ try {
       $oldServer = Get-Process -Id $listener.OwningProcess -ErrorAction SilentlyContinue
       if (-not $oldServer -or $oldServer.ProcessName -ne 'node') { throw "O servidor antigo está ativo na porta $port, mas não consegui reiniciá-lo com segurança. Feche-o manualmente e execute o iniciador novamente." }
       Write-Host 'Reiniciando uma versão antiga do app para aplicar as correções...' -ForegroundColor Yellow
-      Stop-Process -Id $oldServer.Id -Force
+      Stop-ProcessSafely $oldServer
       Start-Sleep -Seconds 2
       $listener = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
     }
@@ -53,7 +104,7 @@ try {
     for ($i = 0; $i -lt 30; $i++) {
       Start-Sleep -Seconds 1
       $health = Get-WebShareHealth
-      if ($health -and $health.runtimeVersion -eq 3) { $ready = $true; break }
+      if ($health -and $health.runtimeVersion -eq 5) { $ready = $true; break }
       if ($serverProcess.HasExited) { break }
     }
     if (-not $ready) { throw 'O servidor não iniciou. Consulte .runtime\launcher\server-error.log.' }
@@ -62,20 +113,18 @@ try {
   $serverListener = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
   if (-not $serverListener) { throw 'O servidor não está mais escutando na porta configurada.' }
   $serverProcessId = $serverListener.OwningProcess
-  Set-Content -LiteralPath $serverPidFile -Value $serverProcessId -Encoding ascii
+  Save-TrackedProcess $serverPidFile $serverProcessId
 
   $tunnelLog = Join-Path $runtime 'tunnel.log'
   $tunnelErrorLog = Join-Path $runtime 'tunnel-error.log'
   $publicUrl = $null
-  $savedTunnelPid = 0
-  if (Test-Path -LiteralPath $tunnelPidFile) { [void][int]::TryParse((Get-Content -LiteralPath $tunnelPidFile -Raw).Trim(), [ref]$savedTunnelPid) }
-  $savedTunnel = if ($savedTunnelPid -gt 0) { Get-Process -Id $savedTunnelPid -ErrorAction SilentlyContinue } else { $null }
-  if ($savedTunnel -and $savedTunnel.ProcessName -eq 'cloudflared' -and (Test-Path -LiteralPath $publicUrlFile)) {
+  $savedTunnel = Get-TrackedProcess $tunnelPidFile 'cloudflared'
+  if ($savedTunnel -and (Test-Path -LiteralPath $publicUrlFile)) {
     $savedUrl = (Get-Content -LiteralPath $publicUrlFile -Raw).Trim()
     if ($savedUrl -match '^https://[a-z0-9-]+\.trycloudflare\.com$') {
       try {
         $health = Invoke-RestMethod -Uri "$savedUrl/api/health" -TimeoutSec 4
-        if ($health.status -eq 'ok' -and $health.service -eq 'webshare' -and $health.runtimeVersion -eq 3) {
+        if ($health.status -eq 'ok' -and $health.service -eq 'webshare' -and $health.runtimeVersion -eq 5) {
           $publicUrl = $savedUrl
           $tunnelProcess = $savedTunnel
           Write-Host 'Túnel público existente reutilizado.' -ForegroundColor Green
@@ -84,10 +133,11 @@ try {
     }
   }
   if (-not $publicUrl) {
-    if ($savedTunnel -and $savedTunnel.ProcessName -eq 'cloudflared') { Stop-Process -Id $savedTunnel.Id -Force -ErrorAction SilentlyContinue }
+    if ($savedTunnel) { Stop-ProcessSafely $savedTunnel }
     Remove-Item -LiteralPath $tunnelLog, $tunnelErrorLog -Force -ErrorAction SilentlyContinue
     Write-Host 'Abrindo um endereço público seguro...' -ForegroundColor Cyan
     $tunnelProcess = Start-Process -FilePath $cloudflaredPath -ArgumentList @('tunnel', '--no-autoupdate', '--url', $localUrl) -WorkingDirectory $project -PassThru -WindowStyle Hidden -RedirectStandardOutput $tunnelLog -RedirectStandardError $tunnelErrorLog
+    $startedTunnel = $true
     $publicUrl = $null
     for ($i = 0; $i -lt 60; $i++) {
       Start-Sleep -Seconds 1
@@ -110,7 +160,7 @@ try {
   for ($i = 0; $i -lt 120; $i++) {
     try {
       $health = Invoke-RestMethod -Uri "$publicUrl/api/health" -TimeoutSec 2
-      if ($health.status -eq 'ok' -and $health.service -eq 'webshare' -and $health.runtimeVersion -eq 3) { $publicReady = $true; break }
+      if ($health.status -eq 'ok' -and $health.service -eq 'webshare' -and $health.runtimeVersion -eq 5) { $publicReady = $true; break }
       $lastProbeError = 'o servidor respondeu com uma versão diferente'
     } catch { $lastProbeError = $_.Exception.Message }
     if ($tunnelProcess.HasExited) { throw 'O túnel parou antes de o endereço ficar acessível.' }
@@ -120,7 +170,7 @@ try {
   if (-not $publicReady) { throw "O túnel foi criado, mas o site não respondeu após 120 segundos. Última resposta: $lastProbeError. Confira .runtime\launcher\tunnel-error.log." }
 
   Set-Content -LiteralPath $publicUrlFile -Value $publicUrl -Encoding ascii
-  Set-Content -LiteralPath $tunnelPidFile -Value $tunnelProcess.Id -Encoding ascii
+  Save-TrackedProcess $tunnelPidFile $tunnelProcess.Id
   Write-Host ''
   Write-Host 'Transmissão pronta.' -ForegroundColor Green
   Write-Host "Página do transmissor e endereço público: $publicUrl" -ForegroundColor Yellow
@@ -133,8 +183,8 @@ try {
   exit 1
 } finally {
   if (-not $completed) {
-    if ($tunnelProcess -and -not $tunnelProcess.HasExited) { Stop-Process -Id $tunnelProcess.Id -Force -ErrorAction SilentlyContinue }
-    if ($startedServer -and $serverProcess -and -not $serverProcess.HasExited) { Stop-Process -Id $serverProcess.Id -Force -ErrorAction SilentlyContinue }
+    if ($startedTunnel) { Stop-ProcessSafely $tunnelProcess }
+    if ($startedServer) { Stop-ProcessSafely $serverProcess }
   }
 }
 

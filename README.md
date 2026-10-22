@@ -62,7 +62,7 @@ O Quick Tunnel cria um endereço público temporário. Se o túnel for recriado,
 4. O áudio e o vídeo são enviados por WebRTC. Normalmente seguem diretamente do transmissor para cada espectador; se a rede exigir TURN, o tráfego de mídia passa pelo serviço TURN configurado.
 5. Cada espectador recebe uma cópia do fluxo. Por isso, mais espectadores exigem mais upload do computador transmissor.
 
-O túnel público disponibiliza a página e o servidor de sinalização; ele não hospeda nem distribui automaticamente o vídeo. As salas ficam em memória: reiniciar o servidor encerra as salas em andamento. Enquanto o transmissor permanecer conectado, a validade da sala é renovada e não há limite fixo de duração. Depois de ficar inativa pelo período definido em `ROOM_TTL_SECONDS`, a sala expira.
+O túnel público disponibiliza a página e o servidor de sinalização; ele não hospeda nem distribui automaticamente o vídeo. As salas ficam em memória: reiniciar o servidor encerra as salas em andamento. Enquanto o transmissor permanecer conectado, a validade da sala é renovada e não há limite fixo de duração. Uma queda momentânea do WebSocket do transmissor tem uma janela de 30 segundos para reconexão; se ele não voltar, a sala termina. Uma sala criada e não iniciada expira em até cinco minutos. Salas inativas também expiram pelo período definido em `ROOM_TTL_SECONDS` (12 horas por padrão).
 
 ## Qualidade, áudio e fontes
 
@@ -76,6 +76,7 @@ O túnel público disponibiliza a página e o servidor de sinalização; ele nã
 
 - O navegador só captura a tela depois da escolha e autorização explícitas do transmissor.
 - O link do espectador funciona como credencial: qualquer pessoa que o receber poderá tentar entrar enquanto a sala estiver ativa. Compartilhe-o apenas com quem você deseja convidar.
+- A configuração STUN/TURN é entregue somente após autenticação com o token da sala; respostas com credenciais TURN não são armazenadas em cache.
 - O app não grava a mídia. O servidor mantém salas e credenciais apenas em memória.
 - WebRTC normalmente cifra a mídia durante o transporte. Isso não impede que um espectador grave ou filme a tela por outros meios.
 - Não publique o arquivo `.env` nem compartilhe segredos TURN. O `.gitignore` exclui `.env` do repositório.
@@ -90,11 +91,13 @@ Copie `.env.example` para `.env`. Variáveis usadas com mais frequência:
 | `PUBLIC_ORIGIN` | Origem pública usada nos links. Em produção deve usar HTTPS. |
 | `ALLOW_QUICK_TUNNEL` | Permite aceitar o domínio Quick Tunnel encaminhado pelo proxy local. Use `true` apenas ao utilizar esse túnel. |
 | `TRUST_PROXY_HOPS` | Quantidade de proxies confiáveis. Para o Quick Tunnel local, use `1`. |
-| `ROOM_TTL_SECONDS` | Prazo de inatividade antes de expirar uma sala. Padrão: seis horas; a sala ativa renova esse prazo. |
+| `ROOM_TTL_SECONDS` | Prazo de inatividade antes de expirar uma sala. Padrão: 12 horas; a sala ativa renova esse prazo. |
 | `MAX_VIEWERS` | Máximo de espectadores por sala. Padrão: quatro. |
 | `MAX_ROOMS` | Máximo de salas simultâneas em memória. |
+| `MAX_TOTAL_CONNECTIONS` | Limite global de conexões de sinalização simultâneas. Padrão: 1.000. |
 | `STUN_URLS` | Servidores STUN usados para procurar um caminho WebRTC direto. |
 | `TURN_URLS` e `TURN_SHARED_SECRET` | Serviço TURN e segredo usado para gerar credenciais temporárias, caso seja necessário retransmitir mídia. |
+| `TURN_CREDENTIAL_TTL_SECONDS` | Duração das credenciais TURN. Padrão: 12 horas, para permitir sessões longas quando o tráfego usar TURN. |
 
 STUN sozinho não conecta todas as redes. Para redes restritivas, configure TURN. As portas de TURN precisam estar liberadas no servidor e no firewall.
 
@@ -110,7 +113,7 @@ Com as dependências instaladas, execute:
 npm.cmd test
 ```
 
-Os testes automatizados verificam configuração, tokens, salas, expiração e renovação por atividade, limites e mensagens de sinalização. Eles não substituem um teste real entre navegadores e redes diferentes.
+Os testes automatizados verificam configuração, tokens, salas, expiração e renovação por atividade, autenticação das credenciais ICE, limite global de WebSockets, reconexão do transmissor e mensagens de sinalização. Eles não substituem um teste real entre navegadores e redes diferentes.
 
 ## Diagnóstico rápido
 

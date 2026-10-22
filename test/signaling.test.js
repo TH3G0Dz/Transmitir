@@ -17,7 +17,7 @@ const last = (socket, type) => socket.sent.findLast((message) => message.type ==
 test("autoriza entrada e encaminha offer, answer e ICE apenas entre participantes da sala", async () => {
   const manager = new RoomManager();
   const room = manager.createRoom();
-  const dependencies = { roomManager: manager, limiter: new SlidingWindowLimiter({ windowMs: 60_000, limit: 50 }), config: {} };
+  const dependencies = { roomManager: manager, limiter: new SlidingWindowLimiter({ windowMs: 60_000, limit: 50 }) };
   const host = new FakeSocket(); const viewer = new FakeSocket();
   handleConnection(host, dependencies); handleConnection(viewer, dependencies);
   host.message({ type: "join", roomId: room.id, role: "host", token: room.hostToken });
@@ -39,7 +39,7 @@ test("autoriza entrada e encaminha offer, answer e ICE apenas entre participante
 test("recusa token incorreto e notifica espectadores quando host encerra", async () => {
   const manager = new RoomManager();
   const room = manager.createRoom();
-  const dependencies = { roomManager: manager, limiter: new SlidingWindowLimiter({ windowMs: 60_000, limit: 50 }), config: {} };
+  const dependencies = { roomManager: manager, limiter: new SlidingWindowLimiter({ windowMs: 60_000, limit: 50 }) };
   const denied = new FakeSocket(); handleConnection(denied, dependencies);
   denied.message({ type: "join", roomId: room.id, role: "host", token: room.viewerToken });
   assert.equal(last(denied, "error").code, "room_unavailable");
@@ -58,7 +58,7 @@ test("pong de manutenção renova o prazo da sala ativa", () => {
   const manager = new RoomManager({ ttlSeconds: 60, now: () => now });
   const room = manager.createRoom();
   const socket = new FakeSocket();
-  handleConnection(socket, { roomManager: manager, limiter: new SlidingWindowLimiter({ windowMs: 60_000, limit: 50 }), config: {} });
+  handleConnection(socket, { roomManager: manager, limiter: new SlidingWindowLimiter({ windowMs: 60_000, limit: 50 }) });
   socket.message({ type: "join", roomId: room.id, role: "host", token: room.hostToken });
   now += 50_000;
   socket.isAlive = false;
@@ -68,4 +68,34 @@ test("pong de manutenção renova o prazo da sala ativa", () => {
   assert.ok(manager.get(room.id));
   now += 61_000;
   assert.equal(manager.get(room.id), null);
+});
+
+test("host pode reconectar na janela de 30 segundos e retoma viewers existentes", async () => {
+  const manager = new RoomManager();
+  const room = manager.createRoom();
+  const limiter = new SlidingWindowLimiter({ windowMs: 60_000, limit: 50 });
+  const dependencies = { roomManager: manager, limiter, hostReconnectGraceMs: 25 };
+  const host = new FakeSocket(); const viewer = new FakeSocket();
+  handleConnection(host, dependencies); handleConnection(viewer, dependencies);
+  host.message({ type: "join", roomId: room.id, role: "host", token: room.hostToken });
+  viewer.message({ type: "join", roomId: room.id, role: "viewer", token: room.viewerToken });
+  const viewerId = last(viewer, "joined").viewerId;
+
+  host.close();
+  assert.ok(manager.get(room.id));
+  assert.equal(last(viewer, "room-ended"), undefined);
+
+  const replacement = new FakeSocket();
+  handleConnection(replacement, dependencies);
+  replacement.message({ type: "join", roomId: room.id, role: "host", token: room.hostToken });
+  assert.deepEqual(last(replacement, "joined").viewerIds, [viewerId]);
+  await new Promise((resolve) => setTimeout(resolve, 35));
+  assert.ok(manager.get(room.id));
+  assert.equal(viewer.readyState, 1);
+
+  replacement.close();
+  await new Promise((resolve) => setTimeout(resolve, 35));
+  assert.equal(manager.get(room.id), null);
+  assert.equal(last(viewer, "room-ended").reason, "host_disconnected");
+  assert.equal(viewer.readyState, 3);
 });
