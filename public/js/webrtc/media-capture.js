@@ -7,8 +7,8 @@ export const QUALITY_PROFILES = Object.freeze({
 
 export function captureScreen(profileKey, includeAudio) {
   const profile = QUALITY_PROFILES[profileKey] ?? QUALITY_PROFILES["1080p30"];
-  if (!navigator.mediaDevices?.getDisplayMedia) throw new Error("Este navegador não oferece captura de tela compatível.");
-  // A chamada começa diretamente após o clique do usuário, como exige o navegador.
+  if (!navigator.mediaDevices?.getDisplayMedia) throw new Error("Este dispositivo não oferece captura de tela compatível.");
+  // A chamada começa diretamente após o clique do usuário, como exige a plataforma.
   return navigator.mediaDevices.getDisplayMedia({
     video: { width: { ideal: profile.width }, height: { ideal: profile.height }, frameRate: { ideal: profile.fps, max: profile.fps } },
     audio: includeAudio
@@ -28,7 +28,7 @@ export async function applyCaptureProfile(stream, profileKey) {
   const profile = QUALITY_PROFILES[profileKey] ?? QUALITY_PROFILES["1080p30"];
   try {
     await track.applyConstraints({ width: { ideal: profile.width }, height: { ideal: profile.height }, frameRate: { ideal: profile.fps, max: profile.fps } });
-  } catch { /* A fonte e o navegador podem ignorar ajustes após a escolha inicial. */ }
+  } catch { /* A fonte e a plataforma podem ignorar ajustes após a escolha inicial. */ }
 }
 
 export function stopMedia(stream) {

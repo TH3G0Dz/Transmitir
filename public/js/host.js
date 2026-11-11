@@ -185,7 +185,7 @@ async function replacePeerSource(peer, videoTrack, audioTrack) {
 async function changeSource() {
   if (!stream || ui.changeSource.disabled) return;
   ui.changeSource.disabled = true;
-  showMessage("Escolha a nova tela ou guia no seletor do navegador…");
+  showMessage("Escolha a nova tela ou janela no aplicativo…");
   let nextStream;
   const previousStream = stream;
   const previousVideo = previousStream.getVideoTracks()[0];
@@ -238,7 +238,7 @@ async function start() {
     stream = await capturePromise;
     setCaptureContentHint(stream, ui.contentMode.value);
     ui.preview.srcObject = stream; ui.empty.classList.add("hidden");
-    ui.codecStat.textContent = getSupportedVideoCodecs().join(", ") || "Negociado pelo navegador";
+    ui.codecStat.textContent = getSupportedVideoCodecs().join(", ") || "Negociado pelo aplicativo";
     updatePreviewDetails(stream);
     const response = await fetch("/api/rooms", { method: "POST" });
     if (!response.ok) throw new Error("Não foi possível criar uma sala. Verifique o serviço e tente novamente.");
@@ -251,9 +251,10 @@ async function start() {
     ui.start.classList.add("hidden"); ui.stop.disabled = false; ui.stop.classList.remove("hidden");
     ui.changeSource.classList.remove("hidden");
     ui.badge.classList.add("live"); ui.badge.innerHTML = "<i></i> Ao vivo";
+    globalThis.desktopApp?.setBroadcasting(true);
     showMessage(stream.getAudioTracks().length ? "Transmissão ativa com áudio disponível." : ui.audio.checked ? "Transmissão ativa. A fonte escolhida não forneceu áudio." : "Transmissão ativa sem áudio.");
   } catch (error) {
-    stopMedia(stream); stream = null; ui.preview.srcObject = null; ui.empty.classList.remove("hidden");
+    stopMedia(stream); stream = null; globalThis.desktopApp?.setBroadcasting(false); ui.preview.srcObject = null; ui.empty.classList.remove("hidden");
     signal?.close(); signal = null; hostJoined = false; roomId = null; hostToken = null; ui.start.disabled = false;
     showMessage(error.message, true);
   }
@@ -267,6 +268,7 @@ function stop() {
   pendingPeers.clear();
   signal?.close(); signal = null;
   stopMedia(stream); stream = null; roomId = null; hostToken = null;
+  globalThis.desktopApp?.setBroadcasting(false);
   ui.preview.srcObject = null; ui.empty.classList.remove("hidden");
   ui.start.classList.remove("hidden"); ui.start.disabled = false; ui.changeSource.disabled = false; ui.changeSource.classList.add("hidden"); ui.stop.disabled = true; ui.stop.classList.add("hidden");
   ui.badge.classList.remove("live"); ui.badge.innerHTML = "<i></i> Encerrado";
@@ -292,7 +294,7 @@ ui.contentMode.addEventListener("change", () => {
   const applied = setCaptureContentHint(stream, ui.contentMode.value);
   showMessage(applied
     ? "Otimização da imagem atualizada sem alterar a resolução."
-    : "Este navegador não permite ajustar a otimização da captura.");
+    : "Este aplicativo não permite ajustar a otimização da captura.");
 });
 
 setInterval(async () => {
