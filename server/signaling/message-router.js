@@ -6,7 +6,30 @@ const send = (socket, type, fields) => {
   if (socket.readyState === 1) socket.send(serverMessage(type, fields));
 };
 
-export function handleConnection(socket, { roomManager, limiter, config, onClose = () => {} }) {
+const hostReconnectTimers = new Map();
+
+function clearHostReconnect(roomId) {
+  clearTimeout(hostReconnectTimers.get(roomId));
+  hostReconnectTimers.delete(roomId);
+}
+
+function endAfterHostDisconnect(roomId, roomManager, graceMs) {
+  clearHostReconnect(roomId);
+  const timer = setTimeout(() => {
+    hostReconnectTimers.delete(roomId);
+    const room = roomManager.get(roomId);
+    if (!room || room.host) return;
+    roomManager.closeRoom(roomId);
+    for (const viewerSocket of room.viewers.values()) {
+      send(viewerSocket, "room-ended", { reason: "host_disconnected" });
+      viewerSocket.close(1000, "Host disconnected");
+    }
+  }, graceMs);
+  timer.unref?.();
+  hostReconnectTimers.set(roomId, timer);
+}
+
+export function handleConnection(socket, { roomManager, limiter, hostReconnectGraceMs = 30_000, onClose = () => {} }) {
   const state = { id: randomUUID(), roomId: null, role: null, closed: false };
   socket.on("error", () => socket.close());
   socket.on("pong", () => {
@@ -31,7 +54,8 @@ export function handleConnection(socket, { roomManager, limiter, config, onClose
           state.role = null; state.roomId = null;
           send(socket, "error", { code: "host_already_connected" }); socket.close(1008, "Host connected"); return;
         }
-        send(socket, "joined", { role: "host", viewerCount: room.viewers.size });
+        clearHostReconnect(message.roomId);
+        send(socket, "joined", { role: "host", viewerCount: room.viewers.size, viewerIds: [...room.viewers.keys()] });
         return;
       }
       if (!roomManager.addViewer(message.roomId, socket, state.id)) {
@@ -53,10 +77,7 @@ export function handleConnection(socket, { roomManager, limiter, config, onClose
     if (state.roomId && state.role) {
       const { room, role } = roomManager.removeParticipant(state.roomId, state.id);
       if (role === "host") {
-        for (const viewerSocket of room?.viewers.values() ?? []) {
-          send(viewerSocket, "room-ended", { reason: "host_disconnected" });
-          viewerSocket.close(1000, "Host disconnected");
-        }
+        if (room) endAfterHostDisconnect(state.roomId, roomManager, hostReconnectGraceMs);
       } else if (role === "viewer" && room?.host) {
         send(room.host.socket, "viewer-left", { viewerId: state.id, viewerCount: room.viewers.size });
       }
@@ -68,6 +89,7 @@ export function handleConnection(socket, { roomManager, limiter, config, onClose
 function routeSignal(socket, state, message, roomManager) {
   if (message.type === "end") {
     if (state.role !== "host") { send(socket, "error", { code: "host_only" }); return; }
+    clearHostReconnect(state.roomId);
     const room = roomManager.closeRoom(state.roomId);
     for (const viewerSocket of room?.viewers.values() ?? []) {
       send(viewerSocket, "room-ended", { reason: "host_ended" });

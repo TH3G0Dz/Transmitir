@@ -1,18 +1,26 @@
-# Transmitir
+# TH Transmissões
 
-Aplicação web para compartilhar uma tela, janela ou guia do navegador ao vivo. O transmissor escolhe a fonte no seletor do navegador; outras pessoas assistem pelo link da sala, inclusive em dispositivos e redes diferentes.
+Aplicativo desktop para Windows que compartilha uma tela ou janela ao vivo. O transmissor trabalha dentro do app; espectadores assistem pelo link privado no navegador, sem instalar nada.
 
-## Começar no Windows
+## Usar no Windows
 
-### Requisitos
+1. Na [página de releases](https://github.com/TH3G0Dz/Transmitir/releases/latest), baixe `TH-Transmissoes-Setup-1.0.2.exe`.
+2. Instale e abra **TH Transmissões**.
+3. Aguarde o app preparar o endereço seguro.
+4. Clique em **Iniciar transmissão** e escolha uma tela ou janela.
+5. Copie o link exibido e envie aos espectadores.
 
-- Windows 10 ou 11.
-- Node.js 20.6 ou mais recente, que já inclui o npm.
-- Git para baixar o projeto do GitHub.
-- Para publicar um endereço acessível pela internet com o iniciador de um clique: Cloudflare Tunnel (`cloudflared`). O iniciador procura `cloudflared.exe` no `PATH` ou em `C:\Program Files (x86)\cloudflared\cloudflared.exe`.
-- Um navegador atualizado com WebRTC e captura de tela, como Chrome ou Edge.
+O `.exe` inclui o app, Node.js e Cloudflare Tunnel. O computador precisa somente de Windows 10/11 e internet.
 
-### Instalar o projeto
+Ao fechar a janela durante uma transmissão, o app fica na bandeja e continua funcionando. Clique no ícone da bandeja para reabrir. Use **Sair** no menu da bandeja para encerrar o app e o túnel.
+
+Na primeira execução, o Firewall do Windows pode perguntar sobre acesso de rede. O app escuta somente no próprio computador e usa uma conexão de saída; não precisa liberar acesso público ou privado.
+
+O Quick Tunnel cria um endereço temporário. Ao reabrir o app, compartilhe o novo link. O computador transmissor precisa permanecer ligado.
+
+## Desenvolvimento
+
+Requisitos: Node.js 20.6+, Git e `cloudflared.exe` instalado ou indicado em `CLOUDFLARED_PATH`.
 
 Abra o PowerShell e execute:
 
@@ -23,59 +31,43 @@ Copy-Item .env.example .env
 npm.cmd install
 ```
 
-Use `npm.cmd` no PowerShell. Isso evita o erro de política de execução que pode impedir o carregamento do script `npm.ps1`.
-
-### Executar apenas no computador transmissor
-
-Para desenvolvimento e uso local, execute:
+Abra o aplicativo desktop em desenvolvimento:
 
 ```powershell
-npm.cmd run dev
+npm.cmd run desktop
 ```
 
-Abra <http://localhost:3000>. O endereço `localhost` só funciona no próprio computador; pessoas em outros locais não devem usar esse endereço. Para encerrar o servidor iniciado no terminal, pressione `Ctrl+C`.
+Gere o instalador independente:
 
-### Compartilhar com pessoas pela internet
+```powershell
+npm.cmd run dist:win
+```
 
-1. Abra o arquivo `.env` e deixe estas opções configuradas para o Cloudflare Quick Tunnel local:
-
-   ```dotenv
-   TRUST_PROXY_HOPS=1
-   ALLOW_QUICK_TUNNEL=true
-   ```
-
-2. Confirme que instalou o Node.js e o `cloudflared` e que já executou `npm.cmd install`.
-3. Dê dois cliques em `Iniciar-Transmitir.cmd`.
-4. Aguarde o navegador abrir o endereço HTTPS do transmissor.
-5. Clique em **Iniciar transmissão** e selecione uma tela, janela ou guia.
-6. Copie o **link para espectadores** exibido no painel e envie às pessoas.
-7. Para trocar a fonte durante a transmissão, clique em **Mudar tela ou guia**. A sala e o link continuam os mesmos.
-8. Para encerrar, use o botão **Encerrar transmissão** no painel. Para desligar também o servidor e o túnel, execute `Parar-Transmitir.cmd`.
-
-O Quick Tunnel cria um endereço público temporário. Se o túnel for recriado, o endereço do transmissor muda e será necessário compartilhar um novo link. O computador transmissor, o navegador, o servidor e o túnel precisam permanecer ligados durante a transmissão.
+O arquivo final fica em `release\TH-Transmissoes-Setup-1.0.2.exe`. O instalador cria o atalho **TH Transmissões** na área de trabalho.
 
 ## Como a transmissão funciona
 
-1. O navegador do transmissor pede autorização e captura somente a fonte escolhida pelo usuário.
+1. O aplicativo pede ao transmissor uma tela ou janela e captura somente a fonte escolhida.
 2. O servidor cria uma sala temporária e gera um link com credencial de acesso para os espectadores.
 3. O transmissor e cada espectador usam o WebSocket para trocar informações necessárias à conexão. O servidor também envia sinais periódicos para manter a sala ativa.
 4. O áudio e o vídeo são enviados por WebRTC. Normalmente seguem diretamente do transmissor para cada espectador; se a rede exigir TURN, o tráfego de mídia passa pelo serviço TURN configurado.
 5. Cada espectador recebe uma cópia do fluxo. Por isso, mais espectadores exigem mais upload do computador transmissor.
 
-O túnel público disponibiliza a página e o servidor de sinalização; ele não hospeda nem distribui automaticamente o vídeo. As salas ficam em memória: reiniciar o servidor encerra as salas em andamento. Enquanto o transmissor permanecer conectado, a validade da sala é renovada e não há limite fixo de duração. Depois de ficar inativa pelo período definido em `ROOM_TTL_SECONDS`, a sala expira.
+O túnel público disponibiliza a página e o servidor de sinalização; ele não hospeda nem distribui automaticamente o vídeo. As salas ficam em memória: reiniciar o servidor encerra as salas em andamento. Enquanto o transmissor permanecer conectado, a validade da sala é renovada e não há limite fixo de duração. Uma queda momentânea do WebSocket do transmissor tem uma janela de 30 segundos para reconexão; se ele não voltar, a sala termina. Uma sala criada e não iniciada expira em até cinco minutos. Salas inativas também expiram pelo período definido em `ROOM_TTL_SECONDS` (12 horas por padrão).
 
 ## Qualidade, áudio e fontes
 
-- O painel oferece perfis de 720p, 1080p e 1440p. Os valores de Mbps são limites máximos solicitados; o navegador, o dispositivo e a conexão determinam o valor real.
-- O app pede ao navegador que preserve a resolução quando a conexão fica limitada. Uma conexão com pouco upload ainda pode reduzir a qualidade.
+- O painel oferece perfis de 720p, 1080p e 1440p. Os valores de Mbps são limites máximos; o dispositivo e a conexão determinam o valor real.
+- O app tenta preservar a resolução quando a conexão fica limitada. Uma conexão com pouco upload ainda pode reduzir a qualidade.
 - Em P2P, o perfil padrão pode usar até cerca de 8 Mbps de upload por espectador. Quatro espectadores podem exigir aproximadamente 32 Mbps de upload, além da sobrecarga da rede.
-- Para transmitir áudio, habilite **Solicitar áudio compartilhado**, escolha uma guia compatível e marque a opção de áudio que o navegador apresentar. Capturas de tela e áudio variam entre navegador, sistema operacional e dispositivo móvel.
-- **Mudar tela ou guia** substitui a fonte de áudio/vídeo nas conexões atuais. A mudança não cria outra sala nem troca o link.
+- Para transmitir áudio, habilite **Compartilhar áudio do computador**. No Windows, o app captura o áudio reproduzido pelo sistema.
+- **Mudar tela ou janela** substitui a fonte nas conexões atuais. A mudança não cria outra sala nem troca o link.
 
 ## Segurança e privacidade
 
-- O navegador só captura a tela depois da escolha e autorização explícitas do transmissor.
+- O aplicativo só captura a tela depois da escolha explícita do transmissor.
 - O link do espectador funciona como credencial: qualquer pessoa que o receber poderá tentar entrar enquanto a sala estiver ativa. Compartilhe-o apenas com quem você deseja convidar.
+- A configuração STUN/TURN é entregue somente após autenticação com o token da sala; respostas com credenciais TURN não são armazenadas em cache.
 - O app não grava a mídia. O servidor mantém salas e credenciais apenas em memória.
 - WebRTC normalmente cifra a mídia durante o transporte. Isso não impede que um espectador grave ou filme a tela por outros meios.
 - Não publique o arquivo `.env` nem compartilhe segredos TURN. O `.gitignore` exclui `.env` do repositório.
@@ -90,11 +82,13 @@ Copie `.env.example` para `.env`. Variáveis usadas com mais frequência:
 | `PUBLIC_ORIGIN` | Origem pública usada nos links. Em produção deve usar HTTPS. |
 | `ALLOW_QUICK_TUNNEL` | Permite aceitar o domínio Quick Tunnel encaminhado pelo proxy local. Use `true` apenas ao utilizar esse túnel. |
 | `TRUST_PROXY_HOPS` | Quantidade de proxies confiáveis. Para o Quick Tunnel local, use `1`. |
-| `ROOM_TTL_SECONDS` | Prazo de inatividade antes de expirar uma sala. Padrão: seis horas; a sala ativa renova esse prazo. |
+| `ROOM_TTL_SECONDS` | Prazo de inatividade antes de expirar uma sala. Padrão: 12 horas; a sala ativa renova esse prazo. |
 | `MAX_VIEWERS` | Máximo de espectadores por sala. Padrão: quatro. |
 | `MAX_ROOMS` | Máximo de salas simultâneas em memória. |
+| `MAX_TOTAL_CONNECTIONS` | Limite global de conexões de sinalização simultâneas. Padrão: 1.000. |
 | `STUN_URLS` | Servidores STUN usados para procurar um caminho WebRTC direto. |
 | `TURN_URLS` e `TURN_SHARED_SECRET` | Serviço TURN e segredo usado para gerar credenciais temporárias, caso seja necessário retransmitir mídia. |
+| `TURN_CREDENTIAL_TTL_SECONDS` | Duração das credenciais TURN. Padrão: 12 horas, para permitir sessões longas quando o tráfego usar TURN. |
 
 STUN sozinho não conecta todas as redes. Para redes restritivas, configure TURN. As portas de TURN precisam estar liberadas no servidor e no firewall.
 
@@ -110,14 +104,15 @@ Com as dependências instaladas, execute:
 npm.cmd test
 ```
 
-Os testes automatizados verificam configuração, tokens, salas, expiração e renovação por atividade, limites e mensagens de sinalização. Eles não substituem um teste real entre navegadores e redes diferentes.
+Os testes automatizados verificam configuração, desktop, tokens, salas, expiração, autenticação ICE, limites, reconexão e sinalização. Eles não substituem um teste real entre redes diferentes.
 
 ## Diagnóstico rápido
 
 - **O comando `npm` é bloqueado pelo PowerShell:** use `npm.cmd`, como nos exemplos.
-- **O painel não abre:** confira se o servidor iniciou e se a porta 3000 está livre; consulte `.runtime\launcher\server-error.log` quando usar o iniciador.
-- **O endereço público não funciona:** confirme `TRUST_PROXY_HOPS=1`, `ALLOW_QUICK_TUNNEL=true`, conexão com a internet e se o processo `cloudflared` continua ativo.
+- **O aplicativo não abre:** reinstale o `.exe` e confirme que o antivírus não bloqueou o app ou `cloudflared.exe`.
+- **O endereço público não funciona:** confira a internet e se firewall ou antivírus bloquearam o Cloudflare Tunnel.
 - **A sala fica indisponível:** inicie a transmissão antes de abrir o link e compartilhe o link completo mostrado pelo painel. Reiniciar o servidor encerra a sala antiga.
 - **O espectador entra, mas não vê vídeo:** teste primeiro na mesma rede; confira firewall, NAT e configuração TURN.
-- **Sem áudio:** confirme que o seletor do navegador permitiu compartilhar áudio da guia. A opção não é oferecida por todas as fontes e dispositivos.
+- **Sem áudio:** confirme que **Compartilhar áudio do computador** estava marcado antes de escolher a fonte.
+- **O navegador não aparece na lista:** restaure a janela; janelas minimizadas ou em outra área de trabalho não são oferecidas pelo Windows. Depois clique em **Atualizar**.
 - **Imagem travando ou perdendo qualidade:** confira o upload do transmissor, a quantidade de espectadores, o perfil selecionado e o uso de CPU.

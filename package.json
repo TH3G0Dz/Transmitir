@@ -1,17 +1,58 @@
 {
   "name": "webshare",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "private": true,
   "description": "Compartilhamento de tela P2P via WebRTC com sinalização própria.",
   "type": "module",
-  "engines": { "node": ">=20.6" },
+  "main": "desktop/main.js",
+  "engines": {
+    "node": ">=20.6"
+  },
   "scripts": {
     "start": "node --env-file-if-exists=.env server/index.js",
     "dev": "node --watch --env-file-if-exists=.env server/index.js",
+    "desktop": "electron .",
+    "prepare:icon": "node scripts/prepare-icon.js",
+    "prepare:cloudflared": "node scripts/prepare-cloudflared.js",
+    "dist:win": "npm run prepare:icon && npm run prepare:cloudflared && electron-builder --win nsis --x64",
     "test": "node --test"
   },
   "dependencies": {
     "express": "^5.1.0",
     "ws": "^8.18.3"
+  },
+  "build": {
+    "appId": "br.com.thtransmissoes.app",
+    "productName": "TH Transmissões",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "desktop/**/*",
+      "public/**/*",
+      "server/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor/cloudflared.exe",
+        "to": "cloudflared.exe"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "desktop/assets/icon.png",
+      "artifactName": "TH-Transmissoes-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
+  },
+  "devDependencies": {
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0"
   }
 }

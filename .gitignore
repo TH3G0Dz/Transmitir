@@ -4,3 +4,6 @@ npm-debug.log*
 .DS_Store
 coverage/
 .runtime/
+release/
+dist/
+vendor/cloudflared.exe

@@ -1,5 +1,7 @@
 const integer = (env, name, fallback, minimum, maximum) => {
-  const parsed = Number.parseInt(env[name] ?? String(fallback), 10);
+  const value = env[name] ?? String(fallback);
+  if (!/^\d+$/.test(value)) throw new Error(`${name} deve ser um inteiro entre ${minimum} e ${maximum}.`);
+  const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < minimum || parsed > maximum) {
     throw new Error(`${name} deve ser um inteiro entre ${minimum} e ${maximum}.`);
   }
@@ -22,10 +24,11 @@ export function loadConfig(env = process.env) {
     port: integer(env, "PORT", 3000, 1, 65535),
     nodeEnv: production ? "production" : "development",
     publicOrigin: parsedOrigin.origin,
-    roomTtlSeconds: integer(env, "ROOM_TTL_SECONDS", 21600, 300, 604800),
+    roomTtlSeconds: integer(env, "ROOM_TTL_SECONDS", 43200, 300, 604800),
     maxViewers: integer(env, "MAX_VIEWERS", 4, 1, 100),
     maxRooms: integer(env, "MAX_ROOMS", 500, 1, 100000),
     maxConnectionsPerIp: integer(env, "MAX_CONNECTIONS_PER_IP", 20, 2, 500),
+    maxTotalConnections: integer(env, "MAX_TOTAL_CONNECTIONS", 1000, 1, 100000),
     trustProxyHops: integer(env, "TRUST_PROXY_HOPS", 0, 0, 5),
     allowQuickTunnel: env.ALLOW_QUICK_TUNNEL === "true",
     maxMessageBytes: integer(env, "MAX_MESSAGE_BYTES", 65536, 1024, 1048576),
@@ -34,7 +37,7 @@ export function loadConfig(env = process.env) {
     stunUrls: list(env.STUN_URLS ?? "stun:stun.l.google.com:19302"),
     turnUrls: list(env.TURN_URLS ?? ""),
     turnSharedSecret: env.TURN_SHARED_SECRET ?? "",
-    turnCredentialTtlSeconds: integer(env, "TURN_CREDENTIAL_TTL_SECONDS", 3600, 60, 86400)
+    turnCredentialTtlSeconds: integer(env, "TURN_CREDENTIAL_TTL_SECONDS", 43200, 60, 86400)
   });
 }
 

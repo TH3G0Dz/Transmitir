@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { createToken, tokenDigest, verifyToken } from "../security/tokens.js";
 
+const ROOM_RESERVATION_TTL_MS = 5 * 60 * 1000;
+
 export class RoomManager {
   #rooms = new Map();
-  constructor({ ttlSeconds = 21600, maxViewers = 4, maxRooms = 500, now = Date.now } = {}) {
+  constructor({ ttlSeconds = 43200, maxViewers = 4, maxRooms = 500, now = Date.now } = {}) {
     this.ttlMs = ttlSeconds * 1000;
     this.maxViewers = maxViewers;
     this.maxRooms = maxRooms;
@@ -20,7 +22,7 @@ export class RoomManager {
       hostDigest: tokenDigest(hostToken),
       viewerDigest: tokenDigest(viewerToken),
       createdAt: this.now(),
-      expiresAt: this.now() + this.ttlMs,
+      expiresAt: this.now() + Math.min(this.ttlMs, ROOM_RESERVATION_TTL_MS),
       host: null,
       viewers: new Map()
     };
@@ -49,6 +51,7 @@ export class RoomManager {
     const room = this.get(id);
     if (!room || room.host) return false;
     room.host = { socket, participantId };
+    room.expiresAt = this.now() + this.ttlMs;
     return true;
   }
   addViewer(id, socket, participantId) {
@@ -61,8 +64,8 @@ export class RoomManager {
     const room = this.get(id);
     if (!room) return { room: null, role: null };
     if (room.host?.participantId === participantId) {
-      const closed = this.closeRoom(id);
-      return { room: closed, role: "host" };
+      room.host = null;
+      return { room, role: "host" };
     }
     if (room.viewers.delete(participantId)) return { room, role: "viewer" };
     return { room, role: null };

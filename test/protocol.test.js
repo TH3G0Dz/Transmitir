@@ -34,7 +34,12 @@ test("emite credencial TURN com expiração e limita mensagens por janela", () =
 });
 
 test("valida configuração de produção e permite ajustar limites", () => {
+  const defaults = loadConfig({});
+  assert.equal(defaults.roomTtlSeconds, 43_200);
+  assert.equal(defaults.turnCredentialTtlSeconds, 43_200);
+  assert.equal(defaults.maxTotalConnections, 1000);
   assert.throws(() => loadConfig({ NODE_ENV: "production", PUBLIC_ORIGIN: "http://example.test" }), /HTTPS/);
+  assert.throws(() => loadConfig({ MAX_VIEWERS: "4oops" }), /MAX_VIEWERS/);
   const settings = loadConfig({ NODE_ENV: "production", PUBLIC_ORIGIN: "https://example.test", MAX_VIEWERS: "8", STUN_URLS: "stun:one, stun:two" });
   assert.equal(settings.maxViewers, 8);
   assert.deepEqual(settings.stunUrls, ["stun:one", "stun:two"]);

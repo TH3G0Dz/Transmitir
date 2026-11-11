@@ -2,13 +2,13 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0b1020"><title>Transmitir sua tela</title>
+  <meta name="theme-color" content="#0b1116"><title>Painel do transmissor — TH Transmissões</title>
   <link rel="stylesheet" href="/css/styles.css"><script type="module" src="/js/host.js"></script>
 </head>
 <body>
-  <header class="topbar shell"><a class="brand" href="/"><span class="brand-mark">T</span> Transmitir</a><span class="top-note">PAINEL DO TRANSMISSOR</span></header>
+  <header class="topbar shell"><a class="brand" href="/" aria-label="TH Transmissões — início"><span class="brand-mark" aria-hidden="true">TH</span><span>Transmissões</span></a><span class="top-note">ESTÚDIO DE TRANSMISSÃO</span></header>
   <main class="shell workspace">
-    <div class="page-heading"><div><p class="eyebrow">SUA SALA</p><h1>Compartilhe sua tela</h1><p class="muted">Escolha uma qualidade e inicie. O navegador pedirá autorização para capturar a tela.</p></div><span id="liveBadge" class="badge"><i></i> Pronto</span></div>
+    <div class="page-heading"><div><p class="eyebrow">SUA SALA</p><h1>Compartilhe sua tela</h1><p class="muted">Escolha uma qualidade e inicie. O aplicativo pedirá qual tela ou janela deve capturar.</p></div><span id="liveBadge" class="badge"><i></i> Pronto</span></div>
     <div class="host-grid">
       <section class="panel preview-panel">
         <div class="panel-head"><div><h2>Prévia</h2><p id="connectionState" class="muted small">A transmissão ainda não começou</p></div><span id="viewerCount" class="count-pill">0 espectadores</span></div>
@@ -30,10 +30,10 @@
           <option value="motion" selected>Vídeo ou jogo (movimento)</option>
           <option value="detail">Texto ou apresentação (detalhes)</option>
         </select>
-        <small id="contentModeHelp" class="muted small">O navegador prioriza o tipo de imagem escolhido; a resolução não muda.</small>
-        <label class="check-row"><input id="audioToggle" type="checkbox" checked><span><strong>Solicitar áudio compartilhado</strong><small>Vale ao iniciar ou mudar a tela. Para incluir áudio, escolha uma guia e marque “Compartilhar áudio” no navegador.</small></span></label>
+        <small id="contentModeHelp" class="muted small">O aplicativo prioriza o tipo de imagem escolhido; a resolução não muda.</small>
+        <label class="check-row"><input id="audioToggle" type="checkbox" checked><span><strong>Compartilhar áudio do computador</strong><small>Vale ao iniciar ou mudar a tela. No Windows, inclui o áudio reproduzido pelo sistema.</small></span></label>
         <button id="startButton" class="button primary full">Iniciar transmissão</button>
-        <button id="changeSourceButton" class="button secondary full hidden">Mudar tela ou guia</button>
+        <button id="changeSourceButton" class="button secondary full hidden">Mudar tela ou janela</button>
         <button id="stopButton" class="button danger full" disabled>Encerrar transmissão</button>
         <div id="sharePanel" class="share-panel hidden"><label class="field-label" for="shareLink">Link para espectadores</label><div class="copy-row"><input id="shareLink" readonly aria-label="Link da sala"><button id="copyButton" class="button secondary">Copiar</button></div><p id="copyStatus" class="small muted" aria-live="polite">Qualquer pessoa com o link pode entrar enquanto a sala estiver ativa.</p></div>
         <p id="hostMessage" class="notice" role="status" aria-live="polite">Pronto para iniciar. Sua tela não será capturada sem autorização.</p>
